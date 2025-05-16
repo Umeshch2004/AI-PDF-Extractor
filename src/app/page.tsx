@@ -1,8 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
-import type { ChangeEvent } from 'react';
+import { useState, useEffect, type ChangeEvent } from 'react';
 import PdfDisplay from '@/components/pdf-display';
 import QaSection from '@/components/qa-section';
 import { Button } from "@/components/ui/button";
@@ -10,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { pdfQuestionAnswering, type PdfQuestionAnsweringInput, type PdfQuestionAnsweringOutput } from '@/ai/flows/pdf-question-answering';
+import { pdfContentSummarization, type PdfContentSummarizationInput, type PdfContentSummarizationOutput } from '@/ai/flows/pdf-content-summarization';
 import { UploadCloud, Loader2 } from 'lucide-react';
 
 export default function Home() {
@@ -17,8 +17,10 @@ export default function Home() {
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
   const [question, setQuestion] = useState<string>('');
   const [answer, setAnswer] = useState<string | null>(null);
+  const [summary, setSummary] = useState<string | null>(null);
   const [isLoadingPdf, setIsLoadingPdf] = useState<boolean>(false);
   const [isLoadingAnswer, setIsLoadingAnswer] = useState<boolean>(false);
+  const [isLoadingSummary, setIsLoadingSummary] = useState<boolean>(false);
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<number | null>(null);
 
@@ -31,13 +33,16 @@ export default function Home() {
     if (file) {
       if (file.type === "application/pdf") {
         setIsLoadingPdf(true);
+        setPdfDataUri(null); // Clear previous PDF while loading new one
+        setPdfFileName(null);
         const reader = new FileReader();
         reader.onload = (e) => {
           if (e.target?.result && typeof e.target.result === 'string') {
             setPdfDataUri(e.target.result);
             setPdfFileName(file.name);
-            setAnswer(null); 
-            setQuestion(''); 
+            setAnswer(null);
+            setQuestion('');
+            setSummary(null);
             toast({
               title: "PDF Uploaded",
               description: `${file.name} has been successfully uploaded.`,
@@ -68,7 +73,6 @@ export default function Home() {
           });
       }
     }
-    // Reset file input to allow re-uploading the same file
     if (event.target) {
         event.target.value = "";
     }
@@ -76,46 +80,58 @@ export default function Home() {
 
   const handleAskQuestion = async () => {
     if (!pdfDataUri) {
-      toast({
-        variant: "destructive",
-        title: "No PDF",
-        description: "Please upload a PDF file first.",
-      });
+      toast({ variant: "destructive", title: "No PDF", description: "Please upload a PDF file first." });
       return;
     }
     if (!question.trim()) {
-      toast({
-        variant: "destructive",
-        title: "No Question",
-        description: "Please enter a question.",
-      });
+      toast({ variant: "destructive", title: "No Question", description: "Please enter a question." });
       return;
     }
 
     setIsLoadingAnswer(true);
     setAnswer(null);
+    setSummary(null); // Clear summary when asking a question
 
     try {
-      const input: PdfQuestionAnsweringInput = {
-        pdfDataUri,
-        question,
-      };
+      const input: PdfQuestionAnsweringInput = { pdfDataUri, question };
       const result: PdfQuestionAnsweringOutput = await pdfQuestionAnswering(input);
       setAnswer(result.answer);
     } catch (error) {
       console.error("Error getting answer:", error);
-      toast({
-        variant: "destructive",
-        title: "AI Error",
-        description: "Failed to get an answer from the AI. Please try again.",
-      });
-      setAnswer("Sorry, I couldn't find an answer to your question. Please check the document or try rephrasing.");
+      toast({ variant: "destructive", title: "AI Error", description: "Failed to get an answer from the AI. Please try again." });
+      setAnswer("Sorry, I couldn't process your question. Please try again or check the document.");
     } finally {
       setIsLoadingAnswer(false);
     }
   };
+
+  const handleGetSummary = async () => {
+    if (!pdfDataUri) {
+      toast({ variant: "destructive", title: "No PDF", description: "Please upload a PDF file first." });
+      return;
+    }
+    setIsLoadingSummary(true);
+    setSummary(null);
+    setAnswer(null); // Clear answer when asking for summary
+    setQuestion(''); // Clear question as well
+
+    try {
+      const input: PdfContentSummarizationInput = {
+        pdfDataUri,
+        question: "Provide a comprehensive summary of the key points in this document.", // Generic question for summarization flow
+      };
+      const result: PdfContentSummarizationOutput = await pdfContentSummarization(input);
+      setSummary(result.summary); // Use the summary field from the output
+    } catch (error) {
+      console.error("Error getting summary:", error);
+      toast({ variant: "destructive", title: "AI Error", description: "Failed to get a summary from the AI. Please try again." });
+      setSummary("Sorry, I couldn't generate a summary. Please try again or check the document.");
+    } finally {
+      setIsLoadingSummary(false);
+    }
+  };
   
-  const isLoading = isLoadingPdf || isLoadingAnswer;
+  const isLoading = isLoadingPdf || isLoadingAnswer || isLoadingSummary;
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -145,18 +161,19 @@ export default function Home() {
       <main className="flex-grow container mx-auto px-4 py-6 sm:py-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 h-full">
           <div className="flex flex-col space-y-4">
-            {/* <h2 className="text-xl sm:text-2xl font-semibold">Document Viewer</h2> */}
             <PdfDisplay pdfDataUri={pdfDataUri} fileName={pdfFileName} />
           </div>
 
           <div className="flex flex-col space-y-4">
-            {/* <h2 className="text-xl sm:text-2xl font-semibold">Ask Questions</h2> */}
             <QaSection
               question={question}
               onQuestionChange={setQuestion}
               onAskQuestion={handleAskQuestion}
               answer={answer}
-              isLoading={isLoadingAnswer}
+              summary={summary}
+              isLoadingAnswer={isLoadingAnswer}
+              isLoadingSummary={isLoadingSummary}
+              onGetSummary={handleGetSummary}
               pdfUploaded={!!pdfDataUri}
             />
           </div>
