@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { pdfQuestionAnswering, type PdfQuestionAnsweringInput, type PdfQuestionAnsweringOutput } from '@/ai/flows/pdf-question-answering';
 import { pdfContentSummarization, type PdfContentSummarizationInput, type PdfContentSummarizationOutput } from '@/ai/flows/pdf-content-summarization';
+import { pdfKeywordExtraction, type PdfKeywordExtractionInput, type PdfKeywordExtractionOutput } from '@/ai/flows/pdf-keyword-extraction';
 import { UploadCloud, Loader2 } from 'lucide-react';
 
 export default function Home() {
@@ -18,9 +19,11 @@ export default function Home() {
   const [question, setQuestion] = useState<string>('');
   const [answer, setAnswer] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
+  const [keywords, setKeywords] = useState<string[] | null>(null);
   const [isLoadingPdf, setIsLoadingPdf] = useState<boolean>(false);
   const [isLoadingAnswer, setIsLoadingAnswer] = useState<boolean>(false);
   const [isLoadingSummary, setIsLoadingSummary] = useState<boolean>(false);
+  const [isLoadingKeywords, setIsLoadingKeywords] = useState<boolean>(false);
   const { toast } = useToast();
   const [currentYear, setCurrentYear] = useState<number | null>(null);
 
@@ -33,7 +36,7 @@ export default function Home() {
     if (file) {
       if (file.type === "application/pdf") {
         setIsLoadingPdf(true);
-        setPdfDataUri(null); // Clear previous PDF while loading new one
+        setPdfDataUri(null); 
         setPdfFileName(null);
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -43,6 +46,7 @@ export default function Home() {
             setAnswer(null);
             setQuestion('');
             setSummary(null);
+            setKeywords(null);
             toast({
               title: "PDF Uploaded",
               description: `${file.name} has been successfully uploaded.`,
@@ -90,7 +94,8 @@ export default function Home() {
 
     setIsLoadingAnswer(true);
     setAnswer(null);
-    setSummary(null); // Clear summary when asking a question
+    setSummary(null); 
+    setKeywords(null);
 
     try {
       const input: PdfQuestionAnsweringInput = { pdfDataUri, question };
@@ -112,16 +117,17 @@ export default function Home() {
     }
     setIsLoadingSummary(true);
     setSummary(null);
-    setAnswer(null); // Clear answer when asking for summary
-    setQuestion(''); // Clear question as well
+    setAnswer(null); 
+    setKeywords(null);
+    setQuestion(''); 
 
     try {
       const input: PdfContentSummarizationInput = {
         pdfDataUri,
-        question: "Provide a comprehensive summary of the key points in this document.", // Generic question for summarization flow
+        question: "Provide a comprehensive summary of the key points in this document.", 
       };
       const result: PdfContentSummarizationOutput = await pdfContentSummarization(input);
-      setSummary(result.summary); // Use the summary field from the output
+      setSummary(result.summary); 
     } catch (error) {
       console.error("Error getting summary:", error);
       toast({ variant: "destructive", title: "AI Error", description: "Failed to get a summary from the AI. Please try again." });
@@ -130,8 +136,32 @@ export default function Home() {
       setIsLoadingSummary(false);
     }
   };
+
+  const handleExtractKeywords = async () => {
+    if (!pdfDataUri) {
+      toast({ variant: "destructive", title: "No PDF", description: "Please upload a PDF file first." });
+      return;
+    }
+    setIsLoadingKeywords(true);
+    setKeywords(null);
+    setAnswer(null);
+    setSummary(null);
+    setQuestion('');
+
+    try {
+      const input: PdfKeywordExtractionInput = { pdfDataUri };
+      const result: PdfKeywordExtractionOutput = await pdfKeywordExtraction(input);
+      setKeywords(result.keywords);
+    } catch (error) {
+      console.error("Error extracting keywords:", error);
+      toast({ variant: "destructive", title: "AI Error", description: "Failed to extract keywords from the AI. Please try again." });
+      setKeywords(["Sorry, I couldn't extract keywords."]);
+    } finally {
+      setIsLoadingKeywords(false);
+    }
+  };
   
-  const isLoading = isLoadingPdf || isLoadingAnswer || isLoadingSummary;
+  const isLoading = isLoadingPdf || isLoadingAnswer || isLoadingSummary || isLoadingKeywords;
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -158,8 +188,8 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="flex-grow container mx-auto px-4 py-6 sm:py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 h-full">
+      <main className="flex-grow container mx-auto px-4 py-6 sm:py-8 flex flex-col">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 flex-grow">
           <div className="flex flex-col space-y-4">
             <PdfDisplay pdfDataUri={pdfDataUri} fileName={pdfFileName} />
           </div>
@@ -171,9 +201,12 @@ export default function Home() {
               onAskQuestion={handleAskQuestion}
               answer={answer}
               summary={summary}
+              keywords={keywords}
               isLoadingAnswer={isLoadingAnswer}
               isLoadingSummary={isLoadingSummary}
+              isLoadingKeywords={isLoadingKeywords}
               onGetSummary={handleGetSummary}
+              onExtractKeywords={handleExtractKeywords}
               pdfUploaded={!!pdfDataUri}
             />
           </div>

@@ -4,7 +4,8 @@
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, Sparkles, Send, HelpCircle, ClipboardCopy, FileText } from 'lucide-react';
+import { Badge } from "@/components/ui/badge";
+import { Loader2, Sparkles, Send, HelpCircle, ClipboardCopy, FileText, Tags } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 
 interface QaSectionProps {
@@ -13,9 +14,12 @@ interface QaSectionProps {
   onAskQuestion: () => void;
   answer: string | null;
   summary: string | null;
+  keywords: string[] | null;
   isLoadingAnswer: boolean;
   isLoadingSummary: boolean;
+  isLoadingKeywords: boolean;
   onGetSummary: () => void;
+  onExtractKeywords: () => void;
   pdfUploaded: boolean;
 }
 
@@ -25,19 +29,39 @@ export default function QaSection({
   onAskQuestion,
   answer,
   summary,
+  keywords,
   isLoadingAnswer,
   isLoadingSummary,
+  isLoadingKeywords,
   onGetSummary,
+  onExtractKeywords,
   pdfUploaded,
 }: QaSectionProps) {
   const { toast } = useToast();
-  const isLoading = isLoadingAnswer || isLoadingSummary;
-  const currentOutput = answer || summary;
+  const isLoading = isLoadingAnswer || isLoadingSummary || isLoadingKeywords;
+  
+  let currentOutput: string | string[] | null = null;
+  let outputType: 'answer' | 'summary' | 'keywords' | null = null;
+  let outputTitle = "AI Response";
+
+  if (answer) {
+    currentOutput = answer;
+    outputType = 'answer';
+    outputTitle = "AI Answer";
+  } else if (summary) {
+    currentOutput = summary;
+    outputType = 'summary';
+    outputTitle = "Summary";
+  } else if (keywords) {
+    currentOutput = keywords;
+    outputType = 'keywords';
+    outputTitle = "Extracted Keywords";
+  }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      if (pdfUploaded && question.trim() && !isLoading) {
+      if (pdfUploaded && question.trim() && !isLoadingAnswer) { // Only trigger for ask question on enter
         onAskQuestion();
       }
     }
@@ -45,11 +69,17 @@ export default function QaSection({
 
   const handleCopy = async () => {
     if (currentOutput) {
+      let textToCopy = "";
+      if (Array.isArray(currentOutput)) {
+        textToCopy = currentOutput.join(", ");
+      } else {
+        textToCopy = currentOutput;
+      }
       try {
-        await navigator.clipboard.writeText(currentOutput);
+        await navigator.clipboard.writeText(textToCopy);
         toast({
           title: "Copied to Clipboard",
-          description: "The AI's response has been copied.",
+          description: `The AI's ${outputType || 'response'} has been copied.`,
         });
       } catch (err) {
         console.error("Failed to copy text: ", err);
@@ -63,14 +93,14 @@ export default function QaSection({
   };
 
   return (
-    <Card className="flex flex-col shadow-md rounded-lg overflow-hidden">
+    <Card className="flex flex-col shadow-md rounded-lg overflow-hidden h-full">
       <CardHeader className="bg-card border-b">
         <CardTitle className="flex items-center text-lg sm:text-xl">
           <HelpCircle className="mr-2 h-5 w-5 text-primary" />
           Interact with Your Document
         </CardTitle>
         <CardDescription>
-          Ask questions or request a summary. The AI will respond based on the uploaded PDF.
+          Ask questions, request a summary, or extract keywords. The AI will respond based on the uploaded PDF.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col space-y-4 p-4 sm:p-6 flex-grow min-h-0">
@@ -83,7 +113,21 @@ export default function QaSection({
           disabled={isLoading || !pdfUploaded}
           aria-label="Question input"
         />
-        <div className="flex flex-col sm:flex-row sm:justify-end gap-2">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:justify-end gap-2">
+          <Button 
+            onClick={onExtractKeywords} 
+            disabled={isLoading || !pdfUploaded}
+            variant="outline"
+            className="w-full sm:w-auto"
+            size="lg"
+          >
+            {isLoadingKeywords ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Tags className="mr-2 h-4 w-4" />
+            )}
+            Extract Keywords
+          </Button>
           <Button 
             onClick={onGetSummary} 
             disabled={isLoading || !pdfUploaded}
@@ -113,11 +157,11 @@ export default function QaSection({
           </Button>
         </div>
         
-        <div className="rounded-md border bg-muted/30 p-3 sm:p-4 flex flex-col">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-md sm:text-lg font-semibold flex items-center shrink-0">
+        <div className="rounded-md border bg-muted/30 p-3 sm:p-4 flex flex-col"> {/* Removed flex-grow and min-h-0 */}
+          <div className="flex justify-between items-center mb-2 shrink-0">
+            <h3 className="text-md sm:text-lg font-semibold flex items-center">
               <Sparkles className="mr-2 h-5 w-5 text-accent" />
-              AI Response
+              {outputTitle}
             </h3>
             {currentOutput && (
               <Button
@@ -132,7 +176,7 @@ export default function QaSection({
             )}
           </div>
           
-          <div className="pr-1">
+          <div className="overflow-y-auto pr-1"> {/* Removed flex-1, min-h-0, max-h-96. Let content define height. */}
             {isLoadingAnswer && (
               <div className="flex items-center text-muted-foreground">
                 <Loader2 className="mr-2 h-5 w-5 sm:h-6 sm:w-6 animate-spin text-primary" />
@@ -145,11 +189,29 @@ export default function QaSection({
                 <p className="text-sm sm:text-base">Summarizing...</p>
               </div>
             )}
-            {!isLoading && currentOutput && (
+             {isLoadingKeywords && (
+              <div className="flex items-center text-muted-foreground">
+                <Loader2 className="mr-2 h-5 w-5 sm:h-6 sm:w-6 animate-spin text-primary" />
+                <p className="text-sm sm:text-base">Extracting Keywords...</p>
+              </div>
+            )}
+            {!isLoading && currentOutput && outputType === 'answer' && (
               <p className="text-sm sm:text-base whitespace-pre-wrap leading-relaxed">{currentOutput}</p>
             )}
+            {!isLoading && currentOutput && outputType === 'summary' && (
+              <p className="text-sm sm:text-base whitespace-pre-wrap leading-relaxed">{currentOutput}</p>
+            )}
+            {!isLoading && currentOutput && outputType === 'keywords' && Array.isArray(currentOutput) && (
+              <div className="flex flex-wrap gap-2">
+                {currentOutput.map((keyword, index) => (
+                  <Badge key={index} variant="secondary" className="text-sm">
+                    {keyword}
+                  </Badge>
+                ))}
+              </div>
+            )}
             {!isLoading && !currentOutput && pdfUploaded && (
-              <p className="text-sm sm:text-base text-muted-foreground">The AI's response will appear here once you ask a question or request a summary.</p>
+              <p className="text-sm sm:text-base text-muted-foreground">The AI's response will appear here once you ask a question, request a summary, or extract keywords.</p>
             )}
             {!isLoading && !currentOutput && !pdfUploaded && (
                <p className="text-sm sm:text-base text-muted-foreground">Upload a PDF and interact with it to see the response here.</p>
@@ -160,3 +222,4 @@ export default function QaSection({
     </Card>
   );
 }
+
